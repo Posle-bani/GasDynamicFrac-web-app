@@ -8,3 +8,6 @@ pydantic[dotenv]
 pydantic-settings
 SQLAlchemy
 uvicorn
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

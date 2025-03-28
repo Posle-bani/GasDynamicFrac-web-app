@@ -3,12 +3,14 @@ from functools import lru_cache
 
 from pydantic import ConfigDict, PostgresDsn
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings"""
 
-    DB_DSN: PostgresDsn = "postgresql://postgres@localhost:5432/postgres"
+    DB_DSN: str = os.getenv("DATABASE_URL", "postgresql://postgres:12345@localhost:5432/gasdynamicdb")
     ROOT_PATH: str = "/" + os.getenv("APP_NAME", "")
 
     CORS_ALLOW_ORIGINS: list[str] = ["*"]
