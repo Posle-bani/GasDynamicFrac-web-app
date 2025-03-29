@@ -13,14 +13,15 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False)
 
     well_states = relationship("WellState", back_populates="user")
     reports_created = relationship("Report", back_populates="creator")
     permissions = relationship("UserReportPermission", back_populates="user")
 
+    
 
 class Location(Base):
     __tablename__ = "locations"
