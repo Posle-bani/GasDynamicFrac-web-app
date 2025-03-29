@@ -2,6 +2,7 @@
 from pydantic import BaseModel, EmailStr, UUID4, Field
 from typing import Optional, List
 from datetime import datetime
+from .report_calculated import ReportCalculatedRead
 
 
 # -------------------------------
@@ -109,6 +110,8 @@ class ReportOut(ReportBase):
     id: UUID4
     created_by: UUID4
     created_at: datetime
+    calculated: Optional[ReportCalculatedRead]
+
 
 
 # -------------------------------

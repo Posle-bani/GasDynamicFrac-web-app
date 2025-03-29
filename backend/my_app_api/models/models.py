@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, String, Boolean, ForeignKey, DateTime, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.types import Float
@@ -85,6 +85,7 @@ class Report(Base):
     well_state = relationship("WellState", back_populates="reports")
     creator = relationship("User", back_populates="reports_created")
     permissions = relationship("UserReportPermission", back_populates="report")
+    calculated = relationship("ReportCalculated", uselist=False, back_populates="report")
 
 
 class UserReportPermission(Base):
@@ -98,3 +99,17 @@ class UserReportPermission(Base):
 
     user = relationship("User", back_populates="permissions")
     report = relationship("Report", back_populates="permissions")
+
+class ReportCalculated(Base):
+    __tablename__ = "report_calculated"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_id = Column(UUID(as_uuid=True), ForeignKey("reports.id"), unique=True)
+
+    # Пример расчётных полей:
+    effective_pressure = Column(Float, nullable=True)
+    required_charges = Column(Integer, nullable=True)
+    gas_volume = Column(Float, nullable=True)
+    impact_duration = Column(Float, nullable=True)
+
+    report = relationship("Report", back_populates="calculated")

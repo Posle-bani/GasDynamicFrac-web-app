@@ -9,6 +9,9 @@ from my_app_api.models.models import Report, UserReportPermission
 from my_app_api.schemas.schemas import ReportCreate, ReportOut
 from my_app_api.utils.auth import get_current_user
 from my_app_api.models.models import User
+from datetime import datetime
+from my_app_api.models.models import ReportCalculated, WellState
+from my_app_api.utils.calculation import calculate_from_well_state
 
 router = APIRouter(prefix="/reports", tags=["Отчёты"])
 
@@ -75,12 +78,33 @@ async def create_report(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session)
 ):
-    new_report = Report(**report.dict(), user_id=current_user.id, uuid=uuid4())
+    # 1. Создание основного отчёта
+    new_report = Report(**report.dict(), user_id=current_user.id, uuid=uuid4(), created_at=datetime.utcnow())
     session.add(new_report)
+    await session.flush()  # получаем ID для связи
+
+    # 2. Найдём состояние скважины и расчитаем значения
+    stmt = select(WellState).where(WellState.id == report.well_state_id)
+    result = await session.execute(stmt)
+    well_state = result.scalar_one_or_none()
+
+    if well_state:
+        state_data = {
+            "depth": well_state.depth,
+            "pressure": well_state.pressure
+        }
+        calc_result = calculate_from_well_state(state_data)
+
+        new_calculation = ReportCalculated(
+            report_id=new_report.id,
+            **calc_result
+        )
+        session.add(new_calculation)
+
+    # 3. Сохраняем разрешение для пользователя
     await session.commit()
     await session.refresh(new_report)
 
-    # создаём разрешение с is_owner=True
     permission = UserReportPermission(
         user_id=current_user.id,
         report_id=new_report.id,

@@ -10,7 +10,7 @@ load_dotenv()
 class Settings(BaseSettings):
     """Application settings"""
 
-    DB_DSN: str = os.getenv("DATABASE_URL", "postgresql://postgres:12345@localhost:5432/gasdynamicdb")
+    DB_DSN: str = os.getenv("ALEMBIC_DATABASE_URL", "postgresql://postgres:12345@localhost:5432/gasdynamicdb")
     ROOT_PATH: str = "/" + os.getenv("APP_NAME", "")
 
     CORS_ALLOW_ORIGINS: list[str] = ["*"]
