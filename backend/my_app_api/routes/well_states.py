@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc, func
 from uuid import UUID
+from typing import Union
 
 from my_app_api.database import get_async_session
 from my_app_api.models.models import WellState
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/well-states", tags=["Состояния скважи
 
 @router.get("/", response_model=list[WellStateOut])
 async def get_well_states(
-    well_id: UUID | None = Query(None), #Вернёт все состояния только для указанной скважины
+    well_id: Union[UUID, None] = Query(None), #Вернёт все состояния только для указанной скважины
     latest: bool = Query(False), #Работает вместе с well_id — вернёт только последнее (по дате) состояние скважины
     session: AsyncSession = Depends(get_async_session)
 ):

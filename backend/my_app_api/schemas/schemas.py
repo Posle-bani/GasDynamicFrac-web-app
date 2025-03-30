@@ -78,7 +78,6 @@ class WellOut(WellBase):
 
 class WellStateBase(BaseModel):
     well_id: UUID4
-    user_id: UUID4
     depth: Optional[float]
     pressure: Optional[float]
     # другие параметры...

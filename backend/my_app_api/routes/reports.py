@@ -1,17 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import or_
+from sqlalchemy.orm import joinedload
 from uuid import UUID, uuid4
+from datetime import datetime
 
 from my_app_api.database import get_async_session
-from my_app_api.models.models import Report, UserReportPermission
+from my_app_api.models.models import (
+    Report, ReportCalculated, UserReportPermission, WellState
+)
 from my_app_api.schemas.schemas import ReportCreate, ReportOut
 from my_app_api.utils.auth import get_current_user
-from my_app_api.models.models import User
-from datetime import datetime
-from my_app_api.models.models import ReportCalculated, WellState
 from my_app_api.utils.calculation import calculate_from_well_state
+from my_app_api.models.models import User
+
+from fastapi import Path
+from sqlalchemy import update, delete
 
 router = APIRouter(prefix="/reports", tags=["Отчёты"])
 
@@ -72,90 +76,217 @@ async def get_user_reports(
     return reports
 
 
-@router.post("/", response_model=ReportOut)
-async def create_report(
-    report: ReportCreate,
+@router.post("/apply", response_model=ReportOut)
+async def apply_report(
+    data: ReportApplyData,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session)
 ):
-    # 1. Создание основного отчёта
-    new_report = Report(**report.dict(), user_id=current_user.id, uuid=uuid4(), created_at=datetime.utcnow())
-    session.add(new_report)
-    await session.flush()  # получаем ID для связи
+    # 1. Получаем последнее состояние скважины
+    result = await session.execute(
+        select(WellState)
+        .where(WellState.well_id == data.well_id)
+        .order_by(WellState.date_created.desc())
+    )
+    latest_state = result.scalars().first()
 
-    # 2. Найдём состояние скважины и расчитаем значения
-    stmt = select(WellState).where(WellState.id == report.well_state_id)
-    result = await session.execute(stmt)
-    well_state = result.scalar_one_or_none()
+    # 2. Проверяем, нужно ли новое состояние скважины
+    create_new_state = (
+        not latest_state or
+        latest_state.depth != data.depth or
+        latest_state.pressure != data.pressure
+    )
 
-    if well_state:
-        state_data = {
-            "depth": well_state.depth,
-            "pressure": well_state.pressure
-        }
-        calc_result = calculate_from_well_state(state_data)
+    if create_new_state:
+        # 3. Если данные изменились, создаём новое состояние скважины
+        new_state = WellState(
+            well_id=data.well_id,
+            user_id=current_user.id,
+            depth=data.depth,
+            pressure=data.pressure
+        )
+        session.add(new_state)
+        await session.flush()  # Генерируется id для нового состояния
+        well_state_id = new_state.id
+    else:
+        # 4. Если данные не изменились, используем последнее состояние
+        well_state_id = latest_state.id
 
-        new_calculation = ReportCalculated(
+    # 5. Создание нового отчёта
+    if not data.report_uuid:
+        new_report = Report(
+            title=data.title,
+            uuid=uuid4(),
+            user_id=current_user.id,
+            well_state_id=well_state_id,
+            created_at=datetime.utcnow()
+        )
+        session.add(new_report)
+        await session.flush()
+
+        # Права на отчёт
+        session.add(UserReportPermission(
+            user_id=current_user.id,
             report_id=new_report.id,
-            **calc_result
+            is_owner=True,
+            can_edit=True
+        ))
+        report = new_report
+
+    # 6. Обновление существующего отчёта
+    else:
+        result = await session.execute(
+            select(Report).where(Report.uuid == data.report_uuid)
         )
-        session.add(new_calculation)
+        report = result.scalars().first()
+        if not report:
+            raise HTTPException(status_code=404, detail="Отчёт не найден")
 
-    # 3. Сохраняем разрешение для пользователя
-    await session.commit()
-    await session.refresh(new_report)
-
-    permission = UserReportPermission(
-        user_id=current_user.id,
-        report_id=new_report.id,
-        is_owner=True
-    )
-    session.add(permission)
-    await session.commit()
-
-    return new_report
-
-@router.get("/{report_uuid}", response_model=ReportOut)
-async def get_report_by_uuid(
-    report_uuid: UUID,
-    session: AsyncSession = Depends(get_async_session)
-):
-    result = await session.execute(
-        select(Report).where(
-            Report.uuid == report_uuid,
+        permission_q = await session.execute(
+            select(UserReportPermission).where(
+                (UserReportPermission.user_id == current_user.id) &
+                (UserReportPermission.report_id == report.id)
+            )
         )
-    )
-    report = result.scalars().first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Отчёт не найден или нет доступа")
-    return report
+        permission = permission_q.scalar_one_or_none()
+        if not permission or not permission.can_edit:
+            raise HTTPException(status_code=403, detail="Нет прав на редактирование отчёта")
 
-@router.put("/{report_uuid}", response_model=ReportOut)
-async def update_report(
-    report_uuid: UUID,
-    updated_data: ReportCreate,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_async_session)
-):
-    result = await session.execute(
-        select(Report)
-        .join(UserReportPermission)
-        .where(
-            Report.uuid == report_uuid,
-            UserReportPermission.user_id == current_user.id,
-            # UserReportPermission.is_owner == True
+        report.title = data.title
+        report.well_state_id = well_state_id
+
+        # Удаляем старые расчёты
+        await session.execute(
+            delete(ReportCalculated).where(ReportCalculated.report_id == report.id)
         )
-    )
-    report = result.scalars().first()
-    if not report:
-        raise HTTPException(status_code=404, detail="Отчёт не найден или нет прав на редактирование")
 
-    for key, value in updated_data.dict().items():
-        setattr(report, key, value)
+    # 7. Выполняем расчёты
+    well_state = await session.get(WellState, well_state_id)
+    calc = calculate_from_well_state(well_state)
+    calc.report_id = report.id
+    session.add(calc)
+    report.calculated = calc
 
     await session.commit()
     await session.refresh(report)
     return report
+
+
+# @router.post("/", response_model=ReportOut)
+# async def create_report(
+#     report: ReportCreate,
+#     current_user: User = Depends(get_current_user),
+#     session: AsyncSession = Depends(get_async_session)
+# ):
+#     # 1. Создание основного отчёта
+#     new_report = Report(**report.dict(), user_id=current_user.id, uuid=uuid4(), created_at=datetime.utcnow())
+#     session.add(new_report)
+#     await session.flush()  # получаем ID для связи
+
+#     # 2. Найдём состояние скважины и расчитаем значения
+#     stmt = select(WellState).where(WellState.id == report.well_state_id)
+#     result = await session.execute(stmt)
+#     well_state = result.scalar_one_or_none()
+
+#     if well_state:
+#         state_data = {
+#             "depth": well_state.depth,
+#             "pressure": well_state.pressure
+#         }
+#         calc_result = calculate_from_well_state(state_data)
+
+#         new_calculation = ReportCalculated(
+#             report_id=new_report.id,
+#             **calc_result
+#         )
+#         session.add(new_calculation)
+
+#     # 3. Сохрняем разрешение для пользователя
+#     permission = UserReportPermission(
+#         user_id=current_user.id,
+#         report_id=new_report.id,
+#         is_owner=True
+#     )
+#     session.add(permission)
+#     await session.commit()
+#     await session.refresh(new_report)
+#     return new_report
+
+# @router.get("/{report_uuid}", response_model=ReportOut)
+# async def get_report_by_uuid(
+#     report_uuid: UUID,
+#     session: AsyncSession = Depends(get_async_session)
+# ):
+#     result = await session.execute(
+#         select(Report)
+#         .options(joinedload(Report.calculated_data))
+#         .where(Report.uuid == report_uuid)
+#     )
+#     report = result.scalars().first()
+
+#     if not report:
+#         raise HTTPException(status_code=404, detail="Отчёт не найден")
+
+#     return report
+
+
+
+
+# @router.put("/{report_uuid}", response_model=ReportOut)
+# async def update_report(
+#     report_uuid: UUID = Path(...),
+#     updated_data: ReportCreate = Depends(),
+#     current_user: User = Depends(get_current_user),
+#     session: AsyncSession = Depends(get_async_session)
+# ):
+#     # 1. Получаем отчёт по UUID
+#     result = await session.execute(
+#         select(Report).where(Report.uuid == report_uuid)
+#     )
+#     report = result.scalars().first()
+
+#     if not report:
+#         raise HTTPException(status_code=404, detail="Отчёт не найден")
+
+#     # 2. Проверка доступа
+#     permission_result = await session.execute(
+#         select(UserReportPermission).where(
+#             (UserReportPermission.user_id == current_user.id) &
+#             (UserReportPermission.report_id == report.id)
+#         )
+#     )
+#     permission = permission_result.scalar_one_or_none()
+
+#     if not permission or not permission.can_edit:
+#         raise HTTPException(status_code=403, detail="Нет прав на редактирование отчёта")
+
+#     # 3. Обновляем поля отчёта
+#     report.title = updated_data.title
+#     report.well_state_id = updated_data.well_state_id
+#     await session.flush()
+
+#     # 4. Удаляем старые расчёты, если были
+#     await session.execute(
+#         delete(ReportCalculated).where(ReportCalculated.report_id == report.id)
+#     )
+
+#     # 5. Выполняем новые расчёты
+#     stmt = select(WellState).where(WellState.id == updated_data.well_state_id)
+#     result = await session.execute(stmt)
+#     well_state = result.scalar_one_or_none()
+
+#     if well_state:
+#         # Прямо создаём модель с вычислениями
+#         new_calc = calculate_from_well_state(well_state)
+#         new_calc.report_id = report.id
+#         session.add(new_calc)
+#         report.calculated = new_calc
+
+#     await session.commit()
+#     await session.refresh(report)
+
+#     return report
+
 
 @router.post("/{report_uuid}/copy", response_model=ReportOut)
 async def copy_report(

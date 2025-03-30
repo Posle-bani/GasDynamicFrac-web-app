@@ -1,15 +1,21 @@
+from my_app_api.models.models import ReportCalculated, WellState
 
-def calculate_from_well_state(well_state: dict) -> dict:
+def calculate_from_well_state(well_state: WellState) -> ReportCalculated:
     """
-    Выполняет расчёты на основе данных состояния скважины.
-    Примерные формулы — будут уточняться.
+    Выполняет расчёты на основе состояния скважины и возвращает объект ReportCalculated.
     """
-    depth = well_state.get("depth", 0)
-    pressure = well_state.get("pressure", 0)
+    depth = well_state.depth or 0.0
+    pressure = well_state.pressure or 0.0
 
-    return {
-        "effective_pressure": pressure - 1.5 if pressure else None,
-        "required_charges": int(depth / 10) if depth else None,
-        "gas_volume": round((depth * pressure) / 1000, 2) if depth and pressure else None,
-        "impact_duration": 3.5  # заглушка
-    }
+    # Примерные расчёты — можно заменить формулами из твоей логики
+    required_charges = int((depth * pressure) / 1000) if pressure > 0 else 0
+    effective_pressure = pressure * 0.9
+    gas_volume = depth * 0.5
+    impact_duration = pressure / 2 if pressure > 0 else 0
+
+    return ReportCalculated(
+        effective_pressure=effective_pressure,
+        required_charges=required_charges,
+        gas_volume=gas_volume,
+        impact_duration=impact_duration
+    )

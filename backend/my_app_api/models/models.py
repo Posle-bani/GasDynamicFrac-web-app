@@ -59,7 +59,6 @@ class WellState(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     well_id = Column(UUID(as_uuid=True), ForeignKey("wells.id"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     date_created = Column(DateTime, default=datetime.utcnow)
 
     depth = Column(Float)
@@ -78,6 +77,7 @@ class Report(Base):
     well_state_id = Column(UUID(as_uuid=True), ForeignKey("well_states.id"), nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    calculated_id = Column(UUID(as_uuid=True), ForeignKey("report_calculated.id"), nullable=True)
 
     # Добавьте сюда все расчётные поля
     title = Column(String, nullable=True)
