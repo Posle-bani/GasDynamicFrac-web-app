@@ -13,12 +13,7 @@ onMounted(() => {
 	<main class="container">
 		<RouterView />
 	</main>
-	<footer>
-		Made by
-		<a href="https://app.profcomff.com"><img src="https://app.profcomff.com/favicon.png" class="logo" /></a>
-		in association with
-		<a href="https://dyakov.space"><img src="https://dyakov.space/files/Icon.svg" class="logo" /></a>
-	</footer>
+	хуй
 </template>
 
 <style scoped>

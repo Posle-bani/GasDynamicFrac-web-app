@@ -13,7 +13,7 @@
     "check": "vue-tsc && npm run format && npm run lint && npm run stylelint"
   },
   "dependencies": {
-    "axios": "^1.6.5",
+    "axios": "^1.8.4",
     "pinia": "^2.1.7",
     "query-string": "^8.1.0",
     "vue": "^3.4.5",

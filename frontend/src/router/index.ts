@@ -2,7 +2,7 @@ import { RouteRecordRaw, createRouter, createWebHistory } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
 	{
-		path: '/',
+		path: '/dick',
 		component: () => import('../pages/MainPage.vue'),
 	},
 ];

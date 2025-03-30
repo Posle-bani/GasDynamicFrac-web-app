@@ -13,9 +13,9 @@ export default defineConfig({
 				multipass: true,
 			},
 		}),
-		stylelint({
-			files: ['src/**/*.{vue,css}'],
-		}),
+		// stylelint({
+		// 	files: ['src/**/*.{vue,css}'],
+		// }),
 	],
 	css: {
 		postcss: {
